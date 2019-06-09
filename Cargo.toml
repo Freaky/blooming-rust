@@ -1,0 +1,9 @@
+[package]
+name = "blooming-rust"
+version = "0.1.0"
+authors = ["Thomas Hurst <tom@hur.st>"]
+edition = "2018"
+
+[dependencies]
+bitvec = "0.11.1"
+siphasher = "0.3.0"
