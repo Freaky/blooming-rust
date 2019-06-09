@@ -80,6 +80,14 @@ impl BloomFilter {
         self.check_or_insert(item.into(), false)
     }
 
+    pub fn checked_insert<T: Into<BloomHash>>(&mut self, item: T) -> Option<bool> {
+        if self.is_full() {
+            None
+        } else {
+            Some(self.check_or_insert(item.into(), true))
+        }
+    }
+
     pub fn insert<T: Into<BloomHash>>(&mut self, item: T) -> bool {
         self.check_or_insert(item.into(), true)
     }
