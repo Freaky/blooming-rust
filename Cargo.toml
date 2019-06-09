@@ -5,5 +5,5 @@ authors = ["Thomas Hurst <tom@hur.st>"]
 edition = "2018"
 
 [dependencies]
-bitvec = "0.11.1"
 siphasher = "0.3.0"
+bitvec-rs = "0.2.0"

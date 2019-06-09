@@ -15,11 +15,8 @@
 /// 16 KiB pages would fit in a bitmap of 128 bits.
 use std::hash::Hash;
 
-use bitvec::{boxed::BitBox, vec::BitVec};
-use bitvec::prelude::*;
+use bitvec_rs::BitVec;
 use siphasher::sip128::{Hasher128, SipHasher};
-
-use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
 pub struct BloomHash {
@@ -51,28 +48,20 @@ pub struct BloomFilter {
     params: BloomFilterParams,
     count: u32,
     pages: u32,
-    dirty: BitBox,
-    filter: BitBox,
+    dirty: BitVec,
+    filter: BitVec,
 }
 
 const BLOOM_PAGE_SIZE: u32 = 1024 * 16;
 
 impl BloomFilter {
     pub fn from_params(mut params: BloomFilterParams) -> Self {
-        // params.m = (params.m % (BLOOM_PAGE_SIZE * 8)) + params.m;
+        params.m = (params.m % (BLOOM_PAGE_SIZE * 8)) + params.m;
         let pages = params.m / (BLOOM_PAGE_SIZE * 8);
 
-        let start = Instant::now();
-        let dirty = bitvec![0; pages as usize];
-        let filter = bitvec![0; params.m as usize];
-        // dirty.resize(pages as usize, false);
-        // filter.resize(params.m as usize, false);
-
-        println!("Created BitVec with length {} in {:.2?}", params.m, start.elapsed());
-
         Self {
-            dirty: dirty.into_boxed_bitslice(),
-            filter: filter.into_boxed_bitslice(),
+            dirty: BitVec::from_elem(pages as usize, false),
+            filter: BitVec::from_elem(params.m as usize, false),
             count: 0,
             pages,
             params,
@@ -106,11 +95,13 @@ impl BloomFilter {
     pub fn insert<T: Into<BloomHash>>(&mut self, item: T) -> bool {
         let hash = item.into();
 
-        let offset = if self.pages > 0 {
-            (hash.nth(self.params.k + 1) % u64::from(self.pages)) * u64::from(BLOOM_PAGE_SIZE * 8)
+        let page = if self.pages > 0 {
+            (hash.nth(self.params.k + 1) % u64::from(self.pages))
         } else {
             0
         };
+
+        let offset = page * u64::from(BLOOM_PAGE_SIZE * 8);
 
         let mut added = false;
 
@@ -124,13 +115,19 @@ impl BloomFilter {
             }
         }
 
+        if added {
+            self.dirty.set(page as usize, true)
+        }
+
         added
     }
 
+    /*
     pub fn count_estimate(&self) -> u32 {
         -((f64::from(self.params.m) / f64::from(self.params.k))
             * (1.0 - (self.filter.count_ones() as f64 / f64::from(self.params.m)))) as u32
     }
+    */
 
     pub fn is_full(&self) -> bool {
         self.count >= self.params.n
