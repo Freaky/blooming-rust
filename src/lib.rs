@@ -133,7 +133,7 @@ impl BloomFilter {
 
     pub fn count_estimate(&self) -> u32 {
         -((f64::from(self.params.m) / f64::from(self.params.k))
-            * (1.0 - (f64::from(self.count_ones()) / f64::from(self.params.m)))) as u32
+            * (1.0 - (f64::from(self.count_ones()) / f64::from(self.params.m))).ln()) as u32
     }
 
     fn count_ones(&self) -> u32 {
@@ -163,11 +163,16 @@ mod tests {
     fn bloomfilter_looks_reasonable() {
         let mut bf = BloomFilter::with_capacity_p(400, 0.01);
 
-        assert!(false == bf.contains("meep"));
-        assert!(false == bf.contains(BloomHash::from("meep")));
+        assert_eq!(false, bf.contains("meep"));
+        assert_eq!(false, bf.contains(BloomHash::from("meep")));
 
-        assert!(true == bf.insert("meep"));
-        assert!(false == bf.insert("meep"));
-        assert!(true == bf.contains(BloomHash::from("meep")));
+        assert_eq!(true, bf.insert("meep"));
+        assert_eq!(false, bf.insert("meep"));
+        assert_eq!(true, bf.contains(BloomHash::from("meep")));
+
+        assert_eq!(true, bf.insert("moop"));
+        assert_eq!(false, bf.insert("moop"));
+        assert_eq!(true, bf.contains(BloomHash::from("moop")));
+        assert_eq!(2, bf.count_estimate());
     }
 }
