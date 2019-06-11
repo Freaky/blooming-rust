@@ -13,6 +13,7 @@
 /// 2 MiB good for ~390k files
 /// split into 256 8KiB pages of ~1500 each
 /// 16 KiB pages would fit in a bitmap of 128 bits.
+use std::fs::OpenOptions;
 use std::hash::Hash;
 
 use bitvec_rs::BitVec;
@@ -59,8 +60,14 @@ const BLOOM_PAGE_SIZE: u32 = 1024 * 16;
 const BLOOM_PAGE_BIT_SIZE: u32 = BLOOM_PAGE_SIZE * 8;
 
 impl BloomFilter {
-    pub fn from_params(mut params: BloomFilterParams) -> Self {
-        params.m += BLOOM_PAGE_BIT_SIZE - (params.m % BLOOM_PAGE_BIT_SIZE);
+    pub fn from_params(params: BloomFilterParams) -> Self {
+        // round to the nearest page size and recalculate our capacity etc
+        let params = BloomFilterParamsBuilder::default()
+            .bits(params.m + BLOOM_PAGE_BIT_SIZE - (params.m % BLOOM_PAGE_BIT_SIZE))
+            .false_positives(params.p)
+            .to_params()
+            .unwrap();
+
         let pages = params.m / BLOOM_PAGE_BIT_SIZE;
 
         Self {
@@ -174,5 +181,21 @@ mod tests {
         assert_eq!(false, bf.insert("moop"));
         assert_eq!(true, bf.contains(BloomHash::from("moop")));
         assert_eq!(2, bf.count_estimate());
+    }
+
+    #[test]
+    fn bloomfilter_degenerate() {
+        let lim = 40000;
+        let mut bf = BloomFilter::with_capacity_p(lim, 0.01);
+
+        let mut found = 0;
+
+        for i in 0..lim {
+            if !bf.insert(i) {
+                found += 1;
+            }
+        }
+
+        assert!(found < ((lim as f32) * 0.01) as u32);
     }
 }

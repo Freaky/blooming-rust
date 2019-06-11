@@ -1,4 +1,3 @@
-
 #[derive(Debug, Default, Clone)]
 pub struct BloomFilterParams {
     pub m: u32,
@@ -84,6 +83,8 @@ impl BloomFilterParamsBuilder {
                 let m = (f64::from(n) * p.ln() / (1.0 / 2.0_f64.powf(LN_2)).ln()).ceil() as u32;
                 let r = f64::from(m) / f64::from(n);
                 let k = (LN_2 * r).round() as u32;
+                let q = f64::exp(-f64::from(k) / r);
+                let p = (1.0 - q).powf(f64::from(k));
 
                 Ok(BloomFilterParams { m, n, k, p })
             }
@@ -106,7 +107,7 @@ impl BloomFilterParamsBuilder {
                 k: None,
                 p: Some(p),
             } => {
-                let n = (f64::from(m) * (1.0 / 2.0_f64.powf(LN_2)) / p.ln()).ceil() as u32;
+                let n = ((f64::from(m) * (1.0 / 2.0_f64.powf(LN_2)).ln()) / p.ln()).ceil() as u32;
                 let r = f64::from(m) / f64::from(n);
                 let k = (LN_2 * r).round() as u32;
                 let q = f64::exp(-f64::from(k) / r);
@@ -128,9 +129,11 @@ mod tests {
         let prm = BloomFilterParams::with_capacity_p(100, 0.01);
         assert_eq!(959, prm.m);
         assert_eq!(7, prm.k);
+        assert!(prm.p < 0.012 && prm.p > 0.009);
 
         let prm = BloomFilterParams::with_capacity_p(1_000_000, 0.0001);
         assert_eq!(19170117, prm.m);
         assert_eq!(13, prm.k);
+        assert!(prm.p < 0.00012 && prm.p > 0.00009);
     }
 }
