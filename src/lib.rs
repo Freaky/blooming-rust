@@ -13,6 +13,9 @@
 /// 2 MiB good for ~390k files
 /// split into 256 8KiB pages of ~1500 each
 /// 16 KiB pages would fit in a bitmap of 128 bits.
+use std::convert::TryInto;
+use std::io::{self, Seek, Read, Write};
+use std::path::Path;
 use std::fs::OpenOptions;
 use std::hash::Hash;
 
@@ -63,7 +66,7 @@ impl BloomFilter {
     pub fn from_params(params: BloomFilterParams) -> Self {
         // round to the nearest page size and recalculate our capacity etc
         let params = BloomFilterParamsBuilder::default()
-            .bits(params.m + BLOOM_PAGE_BIT_SIZE - (params.m % BLOOM_PAGE_BIT_SIZE))
+            .bits(params.m + (BLOOM_PAGE_BIT_SIZE - (params.m % BLOOM_PAGE_BIT_SIZE)))
             .false_positives(params.p)
             .to_params()
             .unwrap();
@@ -79,8 +82,82 @@ impl BloomFilter {
         }
     }
 
+    pub fn from_reader<R: Read>(mut reader: R) -> io::Result<Self> {
+        let mut header = [0; BLOOM_PAGE_SIZE as usize];
+        reader.read_exact(&mut header[..])?;
+        assert!(&header[0..8] == b"BLOOMv00");
+        let n = u32::from_be_bytes(header[8..12].try_into().unwrap());
+        let m = u32::from_be_bytes(header[12..16].try_into().unwrap());
+        let k = u32::from_be_bytes(header[16..20].try_into().unwrap());
+
+        let mut filter = vec![0; (m / 8) as usize];
+        reader.read_exact(&mut filter[..])?;
+
+        let params = BloomFilterParamsBuilder::default()
+            .capacity(n)
+            .bits(m)
+            .hashes(k)
+            .to_params()
+            .unwrap();
+
+        let pages = params.m / BLOOM_PAGE_BIT_SIZE;
+
+        let mut ret = Self {
+            dirty: BitVec::from_elem(pages as usize, false),
+            filter: BitVec::from_bytes(&filter[..]),
+            count: 0,
+            pages,
+            params,
+        };
+
+        ret.count = ret.count_estimate();
+        Ok(ret)
+    }
+
     pub fn with_capacity_p(capacity: u32, p: f64) -> Self {
         Self::from_params(BloomFilterParams::with_capacity_p(capacity, p))
+    }
+
+    pub fn load<P: AsRef<Path>>(path: P) -> io::Result<Self> {
+        Self::from_reader(std::fs::File::open(path.as_ref())?)
+    }
+
+    fn write_header<W: Write>(&self, mut writer: W) -> io::Result<()> {
+        writer.write_all(b"BLOOMv00")?;
+        writer.write_all(&self.params.n.to_be_bytes())?;
+        writer.write_all(&self.params.m.to_be_bytes())?;
+        writer.write_all(&self.params.k.to_be_bytes())
+    }
+
+    pub fn save<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        if let Ok(mut file) = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(path.as_ref()) {
+            let mut header = [0; BLOOM_PAGE_SIZE as usize];
+            self.write_header(&mut header[..]).unwrap();
+
+            file.write_all(&header[..])?;
+            file.write_all(self.filter.as_bytes())?;
+            file.sync_all()?;
+            self.clear_dirty();
+            return Ok(());
+        }
+
+        let mut file = OpenOptions::new().write(true).open(path.as_ref())?;
+        let bytes = self.filter.as_bytes();
+        for index in self.dirty.iter().enumerate().filter(|(_, bit)| *bit).map(|(index, _)| index) {
+            file.seek(io::SeekFrom::Start(((1 + index) * BLOOM_PAGE_SIZE as usize) as u64))?;
+            file.write_all(&bytes[(index * BLOOM_PAGE_SIZE as usize)..((index * BLOOM_PAGE_SIZE as usize) + BLOOM_PAGE_SIZE as usize)])?;
+        }
+        file.sync_all()?;
+        self.clear_dirty();
+
+        Ok(())
+    }
+
+    fn clear_dirty(&mut self) {
+        self.dirty.with_bytes_mut(|buf| buf.iter_mut().for_each(|b| *b = 0));
     }
 
     pub fn contains<T: Into<BloomHash>>(&mut self, item: T) -> bool {
@@ -181,6 +258,32 @@ mod tests {
         assert_eq!(false, bf.insert("moop"));
         assert_eq!(true, bf.contains(BloomHash::from("moop")));
         assert_eq!(2, bf.count_estimate());
+    }
+
+    #[test]
+    fn bloomfilter_save_load() {
+        let mut bf = BloomFilter::with_capacity_p(1024, 0.01);
+
+        for i in 0..512 {
+            assert_eq!(true, bf.insert(i));
+        }
+
+        bf.save("test.bf").unwrap();
+
+        let mut bf = BloomFilter::load("test.bf").unwrap();
+        for i in 0..512 {
+            assert_eq!(true, bf.contains(i));
+        }
+
+        assert_eq!(true, bf.insert(513));
+        bf.save("test.bf").unwrap();
+
+        let mut bf = BloomFilter::load("test.bf").unwrap();
+        for i in 0..512 {
+            assert_eq!(true, bf.contains(i));
+        }
+
+        assert_eq!(true, bf.contains(513));
     }
 
     #[test]
