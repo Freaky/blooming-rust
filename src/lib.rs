@@ -14,12 +14,11 @@
 ///
 /// For my current purposes I ended up just using the write log idea - 16 bytes
 /// per entry was sufficient and the implementation was dead simple.
-
 use std::convert::TryInto;
-use std::io::{self, Seek, Read, Write};
-use std::path::Path;
 use std::fs::OpenOptions;
 use std::hash::Hash;
+use std::io::{self, Read, Seek, Write};
+use std::path::Path;
 
 use bitvec_rs::BitVec;
 use siphasher::sip128::{Hasher128, SipHasher};
@@ -135,7 +134,8 @@ impl BloomFilter {
         if let Ok(mut file) = OpenOptions::new()
             .create_new(true)
             .write(true)
-            .open(path.as_ref()) {
+            .open(path.as_ref())
+        {
             let mut header = [0; BLOOM_PAGE_SIZE as usize];
             self.write_header(&mut header[..]).unwrap();
 
@@ -148,9 +148,20 @@ impl BloomFilter {
 
         let mut file = OpenOptions::new().write(true).open(path.as_ref())?;
         let bytes = self.filter.as_bytes();
-        for index in self.dirty.iter().enumerate().filter(|(_, bit)| *bit).map(|(index, _)| index) {
-            file.seek(io::SeekFrom::Start(((1 + index) * BLOOM_PAGE_SIZE as usize) as u64))?;
-            file.write_all(&bytes[(index * BLOOM_PAGE_SIZE as usize)..((index * BLOOM_PAGE_SIZE as usize) + BLOOM_PAGE_SIZE as usize)])?;
+        for index in self
+            .dirty
+            .iter()
+            .enumerate()
+            .filter(|(_, bit)| *bit)
+            .map(|(index, _)| index)
+        {
+            file.seek(io::SeekFrom::Start(
+                ((1 + index) * BLOOM_PAGE_SIZE as usize) as u64,
+            ))?;
+            file.write_all(
+                &bytes[(index * BLOOM_PAGE_SIZE as usize)
+                    ..((index * BLOOM_PAGE_SIZE as usize) + BLOOM_PAGE_SIZE as usize)],
+            )?;
         }
         file.sync_all()?;
         self.clear_dirty();
@@ -159,7 +170,8 @@ impl BloomFilter {
     }
 
     fn clear_dirty(&mut self) {
-        self.dirty.with_bytes_mut(|buf| buf.iter_mut().for_each(|b| *b = 0));
+        self.dirty
+            .with_bytes_mut(|buf| buf.iter_mut().for_each(|b| *b = 0));
     }
 
     pub fn contains<T: Into<BloomHash>>(&mut self, item: T) -> bool {
