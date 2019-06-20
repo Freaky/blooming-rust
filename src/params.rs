@@ -1,3 +1,9 @@
+/// This is a n-th generation of the maths used by https://hur.st/bloomfilter
+///
+/// This has gone something like JS -> PHP -> JS -> PHP -> Ruby -> Rust
+/// Some losses in transit may have ocurred, and I'm not really to be trusted
+/// with maths at the best of times.
+
 #[derive(Debug, Default, Clone)]
 pub struct BloomFilterParams {
     pub m: u32,

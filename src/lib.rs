@@ -1,18 +1,20 @@
+/// Prototypical disk-backed Rust bloom filter
 ///
-/// A simple disk-backed segmented bloom filter.
+/// Todo:
+/// * Write log, rather than adding items directly, write serialized BloomHash
+///   structs to a log and apply them when the log hits a size limit, to minimise
+///   write costs.
 ///
-/// Two files:
-///  - Append-only write log
-///    - new data (in hash form, I guess), flushed on size limit to:
-///  - The bloom filter
-///    - Or actually, an array of 16k filters.
+/// * Multiple reader/writers with eventual consistency.
 ///
-/// ... or an array of bloom filters.  6MiB would be good for 1.1 million files
-/// w/ error rate of 1 in a billion.
+/// * Scalable filters - multiple filters scaled to maintain a desired false-
+///   positive rate for an unbounded number of items.
 ///
-/// 2 MiB good for ~390k files
-/// split into 256 8KiB pages of ~1500 each
-/// 16 KiB pages would fit in a bitmap of 128 bits.
+/// * Proper tests.
+///
+/// For my current purposes I ended up just using the write log idea - 16 bytes
+/// per entry was sufficient and the implementation was dead simple.
+
 use std::convert::TryInto;
 use std::io::{self, Seek, Read, Write};
 use std::path::Path;
